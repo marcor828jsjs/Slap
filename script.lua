@@ -15,13 +15,13 @@ local camera = workspace.CurrentCamera
 -- Teleporte automático ao executar o script
 if hrp then
     local originalPosition = hrp.Position
-    hrp.Position = Vector3.new(-36.62, 432.12, 314.03)
+    hrp.Position = Vector3.new(-44.00, 451.00, 353.00)
     task.wait(0.1)
     hrp.Position = originalPosition
 end
 
 -- Configurações iniciais da câmera
-local fixedPosition = Vector3.new(-43.227, 165.792, -73.785)
+local fixedPosition = Vector3.new(-93.18, 161.52, -56.28) -- Nova posição da câmera
 local lookDirection = Vector3.new(0.534, -0.459, 0.710).Unit
 local function lookVectorToAngles(vec)
     local pitch = math.asin(-vec.Y)
@@ -43,6 +43,21 @@ local monitoramentoEnabled = false
 local infiniteJumpEnabled = true -- Ativado por padrão
 local espEnabled = true -- Ativado por padrão
 local espHighlights = {}
+
+-- Configurações da hitbox de monitoramento
+local monitoramentoCentro = Vector3.new(-78.35, 150.97, -11.02)
+local monitoramentoRaio = 11.00
+
+-- Configurações da hitbox de fixação
+local fixacaoCentro = Vector3.new(-96.85, 153.89, -12.25)
+local fixacaoRaio = 39.00
+local plataformaInvisivel = nil
+local plataformaY = nil
+
+-- Configurações do Estabilizador
+local plataformaEstabilizadora = nil
+local plataformaEstabilizadoraY = nil
+local highlightEstabilizadora = nil
 
 -- GUI principal
 local gui = Instance.new("ScreenGui")
@@ -243,6 +258,7 @@ tpTrollBtn.Parent = mainFrame
 -- Prompt inicial da câmera
 local promptGui = Instance.new("ScreenGui")
 promptGui.Name = "CameraPrompt"
+promptGui.ResetOnSpawn = false
 promptGui.Parent = player:WaitForChild("PlayerGui")
 
 local promptFrame = Instance.new("Frame")
@@ -266,7 +282,7 @@ promptText.BackgroundTransparency = 1
 promptText.Parent = promptFrame
 
 local yesBtn = Instance.new("TextButton")
-yesBtn.Size = UDim2.new(0.45, -10, 0.25, 0)
+yesBtn.Size = UDim2.new(0.45, 0, 0.25, 0)
 yesBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
 yesBtn.Text = "Sim"
 yesBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
@@ -280,8 +296,8 @@ cornerYes.Parent = yesBtn
 yesBtn.Parent = promptFrame
 
 local noBtn = Instance.new("TextButton")
-noBtn.Size = UDim2.new(0.45, -10, 0.25, 0)
-noBtn.Position = UDim2.new(0.5, 5, 0.65, 0)
+noBtn.Size = UDim2.new(0.45, 0, 0.25, 0)
+noBtn.Position = UDim2.new(0.50, 10, 0.65, 0)
 noBtn.Text = "Não"
 noBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
 noBtn.Font = Enum.Font.GothamBold
@@ -391,15 +407,14 @@ local function cameraUpdate(dt)
 end
 
 -- Monitoramento
-local plataformaCentro = Vector3.new(-13.76, 150.05, -46.15)
-local area = Vector3.new(15, 7, 15)
 local buttonPart = workspace:WaitForChild("Button"):WaitForChild("Part")
 
-local function criarRegiao()
-    local metade = area / 2
-    local canto1 = plataformaCentro - metade
-    local canto2 = plataformaCentro + metade
-    return Region3.new(canto1, canto2)
+local function criarRegiaoMonitoramento()
+    local region = Region3.new(
+        monitoramentoCentro - Vector3.new(monitoramentoRaio, monitoramentoRaio, monitoramentoRaio),
+        monitoramentoCentro + Vector3.new(monitoramentoRaio, monitoramentoRaio, monitoramentoRaio)
+    )
+    return region
 end
 
 local function tocarBotao()
@@ -412,7 +427,7 @@ end
 
 local function monitorPlayers()
     while monitoramentoEnabled do
-        local regiao = criarRegiao()
+        local regiao = criarRegiaoMonitoramento()
         local partes = workspace:FindPartsInRegion3(regiao, nil, math.huge)
         for _, parte in pairs(partes) do
             local char = parte:FindFirstAncestorOfClass("Model")
@@ -426,52 +441,78 @@ local function monitorPlayers()
     end
 end
 
--- Plataformas
-local function criarPlataforma(pos)
-    local plataforma = Instance.new("Part")
-    plataforma.Name = "PlataformaSalva"
-    plataforma.Size = Vector3.new(10, 0.2, 10)
-    plataforma.Anchored = true
-    plataforma.CanCollide = true
-    plataforma.Position = pos
-    plataforma.Material = Enum.Material.SmoothPlastic
-    plataforma.BrickColor = BrickColor.new("Institutional white")
-    plataforma.Parent = workspace
+-- Plataforma invisível na hitbox de fixação
+local function isInFixacaoHitbox()
+    local playerPos = hrp.Position
+    local distance = (playerPos - fixacaoCentro).Magnitude
+    return distance <= fixacaoRaio
 end
 
-local posicoes = {
-    Vector3.new(12.86, 150.10, -45.95),
-    Vector3.new(0.35, 150.10, -45.60),
-    Vector3.new(-13.15, 150.10, -46.06),
-    Vector3.new(-26.07, 150.10, -46.08),
-    Vector3.new(5.58, 149.34, -45.57),
-    Vector3.new(-7.36, 149.20, -45.91),
-    Vector3.new(-20.23, 149.72, -45.77),
-    Vector3.new(-32.52, 148.98, -46.27),
-}
-
-for _, pos in pairs(posicoes) do
-    criarPlataforma(pos)
+local function gerenciarPlataformaInvisivel()
+    if isInFixacaoHitbox() then
+        if not plataformaInvisivel then
+            plataformaInvisivel = Instance.new("Part")
+            plataformaInvisivel.Name = "PlataformaInvisivel"
+            plataformaInvisivel.Size = Vector3.new(10, 0.2, 10)
+            plataformaInvisivel.Anchored = true
+            plataformaInvisivel.CanCollide = true
+            plataformaInvisivel.Transparency = 1
+            plataformaInvisivel.Parent = workspace
+            plataformaY = hrp.Position.Y - 3 -- Altura inicial abaixo dos pés
+        end
+        plataformaInvisivel.Position = Vector3.new(hrp.Position.X, plataformaY, hrp.Position.Z)
+    else
+        if plataformaInvisivel then
+            plataformaInvisivel:Destroy()
+            plataformaInvisivel = nil
+            plataformaY = nil
+        end
+    end
 end
 
+-- Estabilizador
 local tool = Instance.new("Tool")
-tool.Name = "Criador de Plataforma"
+tool.Name = "Estabilizador"
 tool.RequiresHandle = false
 tool.CanBeDropped = false
 tool.Parent = player.Backpack
 
-tool.Activated:Connect(function()
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local ray = Ray.new(root.Position, Vector3.new(0, -100, 0))
-    local hit, position = workspace:FindPartOnRay(ray, char)
-    if hit then
-        criarPlataforma(Vector3.new(position.X, position.Y + 0.1, position.Z))
-    else
-        local fallbackPos = root.Position - Vector3.new(0, 3, 0)
-        criarPlataforma(Vector3.new(fallbackPos.X, fallbackPos.Y + 0.1, fallbackPos.Z))
+local function gerenciarPlataformaEstabilizadora()
+    if plataformaEstabilizadora then
+        local state = humanoid:GetState()
+        if state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
+            plataformaEstabilizadoraY = hrp.Position.Y - 3 -- Atualiza Y ao pular
+        end
+        plataformaEstabilizadora.Position = Vector3.new(hrp.Position.X, plataformaEstabilizadoraY, hrp.Position.Z)
+    end
+end
+
+tool.Equipped:Connect(function()
+    plataformaEstabilizadora = Instance.new("Part")
+    plataformaEstabilizadora.Name = "PlataformaEstabilizadora"
+    plataformaEstabilizadora.Size = Vector3.new(10, 0.2, 10)
+    plataformaEstabilizadora.Anchored = true
+    plataformaEstabilizadora.CanCollide = true
+    plataformaEstabilizadora.Transparency = 1
+    plataformaEstabilizadora.Parent = workspace
+
+    highlightEstabilizadora = Instance.new("Highlight")
+    highlightEstabilizadora.Name = "EstabilizadoraHighlight"
+    highlightEstabilizadora.FillTransparency = 1
+    highlightEstabilizadora.OutlineColor = Color3.new(1, 0, 0)
+    highlightEstabilizadora.OutlineTransparency = 0
+    highlightEstabilizadora.Adornee = plataformaEstabilizadora
+    highlightEstabilizadora.Parent = plataformaEstabilizadora
+
+    plataformaEstabilizadoraY = hrp.Position.Y - 3 -- Altura inicial
+end)
+
+tool.Unequipped:Connect(function()
+    if plataformaEstabilizadora then
+        plataformaEstabilizadora:Destroy()
+        plataformaEstabilizadora = nil
+        highlightEstabilizadora = nil
+        plataformaEstabilizadoraY = nil
     end
 end)
 
@@ -609,7 +650,7 @@ end
 
 local function teleportTroll()
     if hrp then
-        hrp.CFrame = CFrame.new(22.00, 153.00, -32.00)
+        hrp.CFrame = CFrame.new(-33.00, 153.00, 25.00)
     end
 end
 
@@ -628,6 +669,7 @@ yesBtn.MouseButton1Click:Connect(function()
     cameraSwitch.Text = "On"
     cameraSwitch.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     camera.CameraType = Enum.CameraType.Scriptable
+    fixedPosition = Vector3.new(-93.18, 161.52, -56.28)
     promptGui:Destroy()
 end)
 
@@ -641,6 +683,8 @@ end)
 
 -- Loops principais
 RunService.Heartbeat:Connect(antipalmadaLogic)
+RunService.Heartbeat:Connect(gerenciarPlataformaInvisivel)
+RunService.Heartbeat:Connect(gerenciarPlataformaEstabilizadora)
 RunService.RenderStepped:Connect(cameraUpdate)
 
 -- Atualização ao ressuscitar
@@ -650,5 +694,17 @@ player.CharacterAdded:Connect(function(char)
     hrp = char:WaitForChild("HumanoidRootPart")
     if antipalmadaEnabled then
         setupAntipalmada()
+    end
+    -- Limpar plataformas ao ressuscitar
+    if plataformaInvisivel then
+        plataformaInvisivel:Destroy()
+        plataformaInvisivel = nil
+        plataformaY = nil
+    end
+    if plataformaEstabilizadora then
+        plataformaEstabilizadora:Destroy()
+        plataformaEstabilizadora = nil
+        highlightEstabilizadora = nil
+        plataformaEstabilizadoraY = nil
     end
 end)
